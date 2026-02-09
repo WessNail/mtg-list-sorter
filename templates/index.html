@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MTG List Sorter</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+    <style>
+        body { padding: 20px; background: #f8f9fa; }
+        .container { max-width: 1200px; }
+        .group-section { 
+            margin-bottom: 30px; 
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .group-header { 
+            background: #e9ecef; 
+            padding: 10px 15px;
+            font-weight: bold;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .color-header {
+            background: #f8f9fa;
+            padding: 8px 15px;
+            font-weight: bold;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .card-item {
+            padding: 8px 15px;
+            border-bottom: 1px solid #f1f1f1;
+            background: white;
+        }
+        .card-item:last-child {
+            border-bottom: none;
+        }
+        .mana-symbols {
+            font-family: monospace;
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+        .color-badge {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .white { background: linear-gradient(135deg, #fff9c4, #ffd54f); }
+        .blue { background: linear-gradient(135deg, #bbdefb, #2196f3); }
+        .black { background: linear-gradient(135deg, #bdbdbd, #616161); }
+        .red { background: linear-gradient(135deg, #ffcdd2, #f44336); }
+        .green { background: linear-gradient(135deg, #c8e6c9, #4caf50); }
+        .multicolor { background: linear-gradient(45deg, #ff0000, #ff9900, #ffff00, #00ff00, #00ffff, #0000ff, #9900ff); }
+        .colorless { background: linear-gradient(135deg, #e0e0e0, #9e9e9e); }
+        .artifact { background: linear-gradient(135deg, #d7ccc8, #795548); }
+        .land { background: linear-gradient(135deg, #d7ccc8, #8d6e63); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="mb-4">🃏 MTG List Sorter</h1>
+        
+        <div class="row">
+            <!-- Left: Input -->
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Paste Your Card List</h5>
+                        <p class="text-muted">
+                            Paste one card per line. Can include quantities like "4x Lightning Bolt".
+                        </p>
+                        
+                        <textarea id="cardInput" class="form-control" rows="15" 
+                                  placeholder="Example:
+4x Lightning Bolt
+2x Counterspell
+1x Sol Ring
+Black Lotus
+..."></textarea>
+                        
+                        <div class="mt-3">
+                            <button class="btn btn-primary btn-lg" onclick="processList()">
+                                Sort & Group Cards
+                            </button>
+                            <button class="btn btn-outline-secondary" onclick="clearList()">
+                                Clear
+                            </button>
+                        </div>
+                        
+                        <div class="mt-3" id="stats"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Right: Output -->
+            <div class="col-md-6">
+                <div id="output">
+                    <div class="card">
+                        <div class="card-body text-center text-muted">
+                            <h5>Sorted output will appear here</h5>
+                            <p>Paste your list on the left and click "Sort & Group Cards"</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Grouped Results -->
+        <div class="mt-4" id="groupedResults"></div>
+    </div>
+
+    <script>
+        async function processList() {
+            const cardText = document.getElementById('cardInput').value;
+            if (!cardText.trim()) {
+                alert('Please paste some card names first!');
+                return;
+            }
+            
+            // Show loading
+            document.getElementById('output').innerHTML = `
+                <div class="card">
+                    <div class="card-body text-center">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Looking up cards and sorting...</p>
+                    </div>
+                </div>
+            `;
+            
+            try {
+                const response = await fetch('/process_list', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cards: cardText })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error) {
+                    document.getElementById('output').innerHTML = `
+                        <div class="alert alert-danger">${result.error}</div>
+                    `;
+                    return;
+                }
+                
+                // Update stats
+                document.getElementById('stats').innerHTML = `
+                    <div class="alert alert-info">
+                        <strong>${result.total_cards}</strong> cards found
+                        ${result.total_not_found > 0 ? 
+                            `, <strong class="text-danger">${result.total_not_found}</strong> not found` : ''}
+                    </div>
+                `;
+                
+                // Show not found cards
+                let notFoundHtml = '';
+                if (result.not_found && result.not_found.length > 0) {
+                    notFoundHtml = `
+                        <div class="alert alert-warning">
+                            <h6>Cards not found:</h6>
+                            <ul class="mb-0">
+                                ${result.not_found.map(card => `<li>${card}</li>`).join('')}
+                            </ul>
+                        </div>
+                    `;
+                }
+                
+                // Display grouped results
+                let groupedHtml = '';
+                
+                // Order: Mythic/Rare first
+                const rarityOrder = ['Mythic/Rare', 'Common/Uncommon'];
+                const colorOrder = ['White', 'Blue', 'Black', 'Red', 'Green', 
+                                   'Multicolor', 'Colorless', 'Artifact', 'Land', 
+                                   'Tokens and Emblems', 'Unknown'];
+                
+                for (const rarity of rarityOrder) {
+                    if (result.grouped[rarity]) {
+                        groupedHtml += `<div class="group-section">
+                            <div class="group-header">${rarity}</div>`;
+                        
+                        for (const color of colorOrder) {
+                            if (result.grouped[rarity][color]) {
+                                const cards = result.grouped[rarity][color];
+                                
+                                groupedHtml += `
+                                    <div class="color-header">
+                                        <span class="color-badge ${color.toLowerCase().split(' ')[0]}"></span>
+                                        ${color} (${cards.length})
+                                    </div>
+                                `;
+                                
+                                cards.forEach(card => {
+                                    groupedHtml += `
+                                        <div class="card-item">
+                                            <div class="d-flex justify-content-between">
+                                                <div>
+                                                    <strong>${card.name}</strong>
+                                                    ${card.mana_cost ? 
+                                                        `<span class="mana-symbols ms-2">${card.mana_cost}</span>` : ''}
+                                                </div>
+                                                <small class="text-muted">${card.type_line}</small>
+                                            </div>
+                                        </div>
+                                    `;
+                                });
+                            }
+                        }
+                        
+                        groupedHtml += `</div>`;
+                    }
+                }
+                
+                document.getElementById('groupedResults').innerHTML = notFoundHtml + groupedHtml;
+                
+                // Also show simple list in output
+                let simpleList = '';
+                for (const rarity of rarityOrder) {
+                    if (result.grouped[rarity]) {
+                        simpleList += `<h5>${rarity}</h5>`;
+                        for (const color of colorOrder) {
+                            if (result.grouped[rarity][color]) {
+                                result.grouped[rarity][color].forEach(card => {
+                                    simpleList += `<div>${card.name}</div>`;
+                                });
+                            }
+                        }
+                    }
+                }
+                
+                document.getElementById('output').innerHTML = `
+                    <div class="card">
+                        <div class="card-body">
+                            <h5>Sorted List</h5>
+                            <div style="column-count: 2;">${simpleList}</div>
+                        </div>
+                    </div>
+                `;
+                
+            } catch (error) {
+                document.getElementById('output').innerHTML = `
+                    <div class="alert alert-danger">
+                        Error: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        function clearList() {
+            document.getElementById('cardInput').value = '';
+            document.getElementById('output').innerHTML = `
+                <div class="card">
+                    <div class="card-body text-center text-muted">
+                        <h5>Sorted output will appear here</h5>
+                        <p>Paste your list on the left and click "Sort & Group Cards"</p>
+                    </div>
+                </div>
+            `;
+            document.getElementById('groupedResults').innerHTML = '';
+            document.getElementById('stats').innerHTML = '';
+        }
+        
+        // Allow pressing Ctrl+Enter to process
+        document.getElementById('cardInput').addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                processList();
+            }
+        });
+    </script>
+</body>
+</html>

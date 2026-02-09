@@ -1,0 +1,67 @@
+name: Update MTG Database
+
+on:
+  # Runs every day at 3 AM UTC
+  schedule:
+    - cron: '0 3 * * *'
+  
+  # Allows you to run manually from GitHub UI
+  workflow_dispatch:
+  
+  # Also runs when you push database_builder or update script
+  push:
+    paths:
+      - 'database_builder.py'
+      - 'update_database.py'
+      - '.github/workflows/update-database.yml'
+
+jobs:
+  update-database:
+    runs-on: ubuntu-latest  # Uses GitHub's Linux servers
+    
+    steps:
+    # Step 1: Checkout your code
+    - name: Checkout repository
+      uses: actions/checkout@v3
+      with:
+        # This is IMPORTANT - fetches full history
+        fetch-depth: 0
+    
+    # Step 2: Setup Python
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    # Step 3: Install dependencies
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    # Step 4: Run database update
+    - name: Update MTG database
+      run: python update_database.py
+      env:
+        # Increase timeout for large download
+        GITHUB_ACTIONS: true
+    
+    # Step 5: Commit and push if database changed
+    - name: Commit and push updated database
+      run: |
+        # Configure git
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        
+        # Check if database file changed
+        git add data/mtg_cards.sqlite
+        
+        # Only commit if there are changes
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          # Get current date for commit message
+          CURRENT_DATE=$(date +"%Y-%m-%d")
+          git commit -m "Auto-update MTG database - $CURRENT_DATE"
+          git push
+        fi
