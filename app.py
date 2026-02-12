@@ -734,6 +734,13 @@ def process_list():
         # Step 2: Get ALL cards from database in ONE query
         all_names = list(unique_card_names.keys())
         
+        # Add DFC front faces to the search list
+        for name in all_names[:]:  # Iterate over a copy
+            if ' // ' in name:
+                front_face = name.split(' // ')[0]
+                if front_face not in all_names:
+                    all_names.append(front_face)
+        
         # Create placeholders for SQL IN clause
         placeholders = ','.join(['?' for _ in all_names])
         
