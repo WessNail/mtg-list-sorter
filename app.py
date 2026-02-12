@@ -755,7 +755,7 @@ def process_list():
             FROM cards 
             WHERE LOWER(name) IN ({placeholders})
                OR LOWER(asciiName) IN ({placeholders})
-        """, [name.lower() for name in all_names] * 2)
+        """, [name.lower() for name in search_names] * 2)
         
         # Put all results into a lookup dictionary
         card_db = {}
