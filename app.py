@@ -768,18 +768,18 @@ def process_list():
             card_db[row['asciiName'].lower()] = row
         
         # Step 3: Also get double-faced card matches
-        dfc_names = [name for name in all_names if ' // ' not in name]
-        if dfc_names:
-            dfc_placeholders = ','.join(['?' for _ in dfc_names])
-            cursor.execute(f"""
-                SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
-                FROM cards 
-                WHERE (name LIKE ? || ' //%' OR asciiName LIKE ? || ' //%')
-                AND LOWER(name) IN ({dfc_placeholders})
-            """, [name for name in dfc_names for _ in range(2)] + [name.lower() for name in dfc_names])
-            
-            for row in cursor.fetchall():
-                card_db[row['name'].lower()] = row
+        #dfc_names = [name for name in all_names_original if ' // ' not in name]
+        #if dfc_names:
+        #    dfc_placeholders = ','.join(['?' for _ in dfc_names])
+        #    cursor.execute(f"""
+        #        SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
+        #        FROM cards 
+        #        WHERE (name LIKE ? || ' //%' OR asciiName LIKE ? || ' //%')
+        #        AND LOWER(name) IN ({dfc_placeholders})
+        #    """, [name for name in dfc_names for _ in range(2)] + [name.lower() for name in dfc_names])
+        #    
+        #    for row in cursor.fetchall():
+        #        card_db[row['name'].lower()] = row
         
         # Step 4: Process each card entry using our lookup
         for card_name, entries in unique_card_names.items():
