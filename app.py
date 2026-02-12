@@ -719,74 +719,175 @@ def process_list():
             for color in color_order:
                 groups[rarity][color] = []
         
+               # ===== BATCH QUERY - ONE TRIP TO THE DATABASE =====
+        # Step 1: Build a lookup of all cards we need
+        from collections import defaultdict
+        
+        # First, collect all unique card names
+        unique_card_names = {}
         for entry in card_entries:
             card_name = entry['name']
+            if card_name not in unique_card_names:
+                unique_card_names[card_name] = []
+            unique_card_names[card_name].append(entry)
+        
+        # Step 2: Get ALL cards from database in ONE query
+        all_names = list(unique_card_names.keys())
+        
+        # Create placeholders for SQL IN clause
+        placeholders = ','.join(['?' for _ in all_names])
+        
+        # Query for exact matches
+        cursor.execute(f"""
+            SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
+            FROM cards 
+            WHERE LOWER(name) IN ({placeholders})
+               OR LOWER(asciiName) IN ({placeholders})
+        """, [name.lower() for name in all_names] * 2)
+        
+        # Put all results into a lookup dictionary
+        card_db = {}
+        for row in cursor.fetchall():
+            card_db[row['name'].lower()] = row
+            card_db[row['asciiName'].lower()] = row
+        
+        # Step 3: Also get double-faced card matches
+        dfc_names = [name for name in all_names if ' // ' not in name]
+        if dfc_names:
+            dfc_placeholders = ','.join(['?' for _ in dfc_names])
+            cursor.execute(f"""
+                SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
+                FROM cards 
+                WHERE (name LIKE ? || ' //%' OR asciiName LIKE ? || ' //%')
+                AND LOWER(name) IN ({dfc_placeholders})
+            """, [name for name in dfc_names for _ in range(2)] + [name.lower() for name in dfc_names])
             
-            try:
-                # Find the card, but prefer front face entries for double-faced cards
-                cursor.execute("""
-                    SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
-                    FROM cards 
-                    WHERE (LOWER(asciiName) = LOWER(?)
-                           OR LOWER(name) = LOWER(?))
-                    ORDER BY 
-                        -- CRITICAL: Prefer entries where Land is NOT in types array
-                        -- (This puts front face entries first for double-faced cards)
-                        CASE 
-                            WHEN types LIKE '%"Land"%' THEN 2
-                            ELSE 1
-                        END
-                    LIMIT 1
-                """, (card_name, card_name))
-                
-                result = cursor.fetchone()
-                
-                # Fallback for double-faced front names
-                if not result and ' // ' not in card_name:
+            for row in cursor.fetchall():
+                card_db[row['name'].lower()] = row
+        
+        # Step 4: Process each card entry using our lookup
+        for card_name, entries in unique_card_names.items():
+            result = card_db.get(card_name.lower())
+            
+            if not result:
+                # Try ascii name
+                result = card_db.get(card_name.lower())
+            
+            if not result:
+                # Try without accents/special chars
+                simple_name = card_name.lower().replace('æ', 'ae').replace('ö', 'oe')
+                result = card_db.get(simple_name)
+            
+            if not result:
+                # Card not found
+                for entry in entries:
+                    not_found.append(entry['name'])
+                continue
+            
+            # Handle self-meld cards
+            db_name = result['name']
+            if ' // ' in db_name:
+                parts = db_name.split(' // ')
+                if len(parts) == 2 and parts[0] == parts[1]:
+                    clean_name = parts[0]
+                    # Look up the clean version
                     cursor.execute("""
                         SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
                         FROM cards 
-                        WHERE (name LIKE ? || ' //%'
-                               OR asciiName LIKE ? || ' //%')
-                        ORDER BY 
-                            CASE 
-                                WHEN types LIKE '%"Land"%' THEN 2
-                                ELSE 1
-                            END
+                        WHERE (LOWER(asciiName) = LOWER(?)
+                               OR LOWER(name) = LOWER(?))
+                              AND name NOT LIKE '% // %'
                         LIMIT 1
-                    """, (card_name, card_name))
-                    result = cursor.fetchone()
+                    """, (clean_name, clean_name))
+                    cleaner_result = cursor.fetchone()
+                    if cleaner_result:
+                        print(f"  Replaced self-meld '{db_name}' with '{cleaner_result['name']}'")
+                        result = cleaner_result
+            
+            # Process all entries with this card name (handles multiples like 4x)
+            for entry in entries:
+                print(f"  Matched '{entry['name']}' -> '{result['name']}' (types: {result['types']})")
                 
-                if not result:
-                    not_found.append(card_name)
-                    continue
+                try:
+                    colors = json.loads(result['colors']) if result['colors'] else []
+                except:
+                    colors = []
                 
-                # Clean up self-meld cards
-                db_name = result['name']
-                if ' // ' in db_name:
-                    parts = db_name.split(' // ')
-                    if len(parts) == 2 and parts[0] == parts[1]:
-                        clean_name = parts[0]
-                        cursor.execute("""
-                            SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
-                            FROM cards 
-                            WHERE (LOWER(asciiName) = LOWER(?)
-                                   OR LOWER(name) = LOWER(?))
-                                  AND name NOT LIKE '% // %'
-                            LIMIT 1
-                        """, (clean_name, clean_name))
-                        
-                        cleaner_result = cursor.fetchone()
-                        if cleaner_result:
-                            print(f"  Replaced self-meld '{db_name}' with '{cleaner_result['name']}'")
-                            result = cleaner_result
+                rarity = result['rarity'].lower() if result['rarity'] else ''
+                if rarity in ['mythic', 'rare']:
+                    rarity_group = 'Mythic/Rare'
+                else:
+                    rarity_group = 'Common/Uncommon'
                 
-                print(f"  Matched '{card_name}' -> '{result['name']}' (types: {result['types']})")
-                    
-            except sqlite3.OperationalError as e:
-                print(f"SQL error for '{card_name}': {e}")
-                not_found.append(card_name)
-                continue
+                # Color group logic (keep your existing code here)
+                color_group = 'Unknown'
+                display_name = result['name']
+                is_double_faced = ' // ' in display_name
+                
+                # Check mana cost for colors
+                mana_colors = set()
+                mana_cost = result['manaCost'] or ''
+                if mana_cost:
+                    for symbol in ['W', 'U', 'B', 'R', 'G']:
+                        if f'{{{symbol}}}' in mana_cost:
+                            mana_colors.add(symbol)
+                
+                all_colors = set(colors) | mana_colors
+                type_str = result['type'] or ''
+                
+                if is_double_faced and ' // ' in type_str:
+                    front_type = type_str.split(' // ')[0]
+                else:
+                    front_type = type_str
+                
+                is_land_front = 'Land' in front_type
+                
+                if is_land_front and len(all_colors) == 0:
+                    color_group = 'Land'
+                
+                if color_group == 'Unknown':
+                    special_types = ["Token", "Emblem", "Scheme", "Conspiracy", 
+                                   "Phenomenon", "Vanguard", "Hero"]
+                    if any(special_type in front_type for special_type in special_types):
+                        is_regular_card = any(regular_type in front_type for regular_type in 
+                                             ["Creature", "Planeswalker", "Instant", "Sorcery", 
+                                              "Enchantment", "Artifact", "Land", "Battle"])
+                        if not is_regular_card:
+                            color_group = 'Special Cards'
+                
+                if color_group == 'Unknown':
+                    front_is_artifact = 'Artifact' in front_type
+                    if front_is_artifact and len(all_colors) == 0:
+                        color_group = 'Artifact'
+                    elif len(all_colors) == 1:
+                        color_map = {'W': 'White', 'U': 'Blue', 'B': 'Black', 'R': 'Red', 'G': 'Green'}
+                        color_group = color_map.get(list(all_colors)[0], 'Unknown')
+                    elif len(all_colors) >= 2:
+                        color_group = 'Multicolor'
+                    elif len(all_colors) == 0:
+                        color_group = 'Colorless'
+                    else:
+                        color_group = 'Unknown'
+                
+                display_name = result['name']
+                if entry['foil']:
+                    if result['hasFoil'] == 1:
+                        display_name = f"{result['name']} (FOIL)"
+                    else:
+                        display_name = f"{result['name']} (FOIL*)"
+                
+                card_entry = {
+                    'name': display_name,
+                    'type_line': result['type'] or '',
+                    'mana_cost': result['manaCost'] or '',
+                    'color_group': color_group,
+                    'rarity_group': rarity_group,
+                    'foil': entry['foil'],
+                    'quantity': entry['quantity'],
+                    'sort_key': result['name'].lower()
+                }
+                
+                groups[rarity_group][color_group].append(card_entry)
             
             try:
                 colors = json.loads(result['colors']) if result['colors'] else []
