@@ -653,6 +653,11 @@ def index():
 
 @app.route('/process_list', methods=['POST'])
 def process_list():
+    
+    import sys
+    print("🚀🚀🚀 PROCESS_LIST CALLED 🚀🚀🚀", flush=True)
+    sys.stdout.flush()
+    
     try:
         data = request.get_json()
         if not data:
@@ -793,40 +798,15 @@ def process_list():
             
             # Handle self-meld cards
             db_name = result['name']
+            # Handle self-meld cards (same front/back)
             if ' // ' in db_name:
                 parts = db_name.split(' // ')
                 if len(parts) == 2 and parts[0] == parts[1]:
                     clean_name = parts[0]
-                    
-                    # TEMPORARY debugging code
-                    print("=== DATABASE QUERY DEBUG ===")
-                    print(f"all_names length: {len(all_names)}")
-                    print(f"all_names first 5: {all_names[:5]}")
-                    print(f"Placeholders count: {len(placeholders.split(','))}")
-                    print(f"Parameters being passed: {len([name.lower() for name in all_names] * 2)}")
-                    print(f"First few params: {[name.lower() for name in all_names[:3]] * 2}")
-                    print("===========================")
-
-                    cursor.execute(f"""
-                        SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
-                        FROM cards
-                        WHERE LOWER(name) IN ({placeholders})
-                           OR LOWER(asciiName) IN ({placeholders})
-                    """, [name.lower() for name in all_names] * 2)
-
-                    # Look up the clean version
-                    cursor.execute("""
-                        SELECT name, asciiName, colors, type, types, rarity, manaCost, hasFoil
-                        FROM cards 
-                        WHERE (LOWER(asciiName) = LOWER(?)
-                               OR LOWER(name) = LOWER(?))
-                              AND name NOT LIKE '% // %'
-                        LIMIT 1
-                    """, (clean_name, clean_name))
-                    cleaner_result = cursor.fetchone()
-                    if cleaner_result:
-                        print(f"  Replaced self-meld '{db_name}' with '{cleaner_result['name']}'")
-                        result = cleaner_result
+                    # Check if we already have this card in our lookup
+                    if clean_name.lower() in card_db:
+                        result = card_db[clean_name.lower()]
+                        print(f"  Replaced self-meld '{db_name}' with '{result['name']}'")
             
             # Process all entries with this card name (handles multiples like 4x)
             for entry in entries:
