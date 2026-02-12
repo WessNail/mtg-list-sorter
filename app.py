@@ -932,6 +932,20 @@ def process_list():
         traceback.print_exc()
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
+# This runs when Render STARTS the app (not when users visit)
+print("🚀 Render is starting up...")
+
+# Build database if it doesn't exist
+db_path = 'data/mtg_cards.sqlite'
+if not os.path.exists(db_path):
+    print("📦 No database found. Building now...")
+    from database_builder import MTGDatabase
+    db = MTGDatabase()
+    db.build_or_update()
+    print("✅ Database ready!")
+else:
+    print("✅ Database already exists!")
+
 if __name__ == '__main__':
     os.makedirs('data', exist_ok=True)
     
