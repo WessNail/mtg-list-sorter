@@ -703,9 +703,9 @@ def process_list():
         
         # DEBUGGING CODE
         print(f"Card entries: {len(card_entries)}")
-        print(f"Unique card names: {len(unique_card_names)}")
-        print(f"All names original: {len(all_names_original)}")
-        print(f"All names expanded: {len(all_names_expanded)}")
+
+
+
         ########################################################
         
         # Get database connection (auto-builds/updates if needed)
@@ -745,13 +745,19 @@ def process_list():
                 unique_card_names[card_name] = []
             unique_card_names[card_name].append(entry)
         
+        print(f"Unique card names: {len(unique_card_names)}")        
+        
         # Step 2: Get ALL cards from database in ONE query
         # Store ORIGINAL list for query parameters
         all_names_original = list(unique_card_names.keys())
-
+        # DEBUGGING CODE
+        print(f"All names original: {len(all_names_original)}")
+        
         # Create EXPANDED list for searching DFCs
         all_names_expanded = all_names_original.copy()
-
+        # DEBUGGING CODE
+        print(f"All names expanded: {len(all_names_expanded)}")
+                
         # Add DFC front faces to the search list
         for name in all_names_original[:]:  # Use original list
             if ' // ' in name:
