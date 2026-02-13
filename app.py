@@ -654,6 +654,11 @@ def index():
 @app.route('/process_list', methods=['POST'])
 def process_list():
     
+    print(f"Card entries: {len(card_entries)}")
+    print(f"Unique card names: {len(unique_card_names)}")
+    print(f"All names original: {len(all_names_original)}")
+    print(f"All names expanded: {len(all_names_expanded)}")
+    
     import sys
     print("🚀🚀🚀 PROCESS_LIST CALLED 🚀🚀🚀", flush=True)
     sys.stdout.flush()
@@ -949,6 +954,14 @@ def process_list():
         compressed_response = make_response(compressed)
         compressed_response.headers['Content-Encoding'] = 'gzip'
         compressed_response.headers['Content-Type'] = 'application/json'
+        
+        print(f"Response size: {len(response_data)} bytes")
+        print(f"Number of cards in response: {total_cards_found}")
+        print(f"Number of groups: {len(groups)}")
+        
+        # TEMPORARY - bypass compression to test
+        # return response_json
+                
         return compressed_response
         
     except Exception as e:
